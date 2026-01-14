@@ -205,19 +205,51 @@ class Pipeline:
         Returns:
             List of raw article data
         """
+        from app.fetcher.downloader import ArticleDownloader
+
         logger.info("Phase 2: Fetching")
 
-        # TODO: Implement in Chunk 3
-        logger.warning("Fetching not yet implemented - using mock data")
+        if not urls:
+            logger.warning("No URLs to fetch")
+            return []
+
+        # Initialize downloader
+        downloader = ArticleDownloader()
 
         raw_articles = []
-        for url_data in urls:
-            raw_articles.append(
-                {"url": url_data["url"], "html": "<html><body>Mock content</body></html>"}
-            )
-            self.metrics.fetch_success += 1
 
-        logger.info(f"Fetched {len(raw_articles)} articles")
+        for i, url_data in enumerate(urls, 1):
+            url = url_data.get("url", "")
+            if not url:
+                continue
+
+            logger.debug(f"Fetching {i}/{len(urls)}: {url}")
+
+            # Download article
+            result = downloader.download(url)
+
+            if result:
+                # Save raw HTML
+                try:
+                    html_path = self.storage.save_raw_html(self.ticker, url, result["html"])
+                    result["html_path"] = str(html_path)
+                except Exception as e:
+                    logger.warning(f"Failed to save raw HTML for {url}: {e}")
+
+                raw_articles.append(result)
+                self.metrics.fetch_success += 1
+            else:
+                self.metrics.fetch_failed += 1
+                logger.warning(f"Failed to fetch {url}")
+
+        # Close downloader
+        downloader.close()
+
+        logger.info(
+            f"Fetching complete: {self.metrics.fetch_success}/{len(urls)} successful "
+            f"({self.metrics.fetch_success_rate:.1f}%)"
+        )
+
         return raw_articles
 
     def _run_extraction(self, raw_articles: list) -> list:
@@ -230,26 +262,68 @@ class Pipeline:
         Returns:
             List of parsed article dictionaries
         """
+        from app.extraction.cleaner import TextCleaner
+        from app.extraction.parser import ArticleParser
+
         logger.info("Phase 3: Extraction")
 
-        # TODO: Implement in Chunk 3
-        logger.warning("Extraction not yet implemented - using mock data")
+        if not raw_articles:
+            logger.warning("No articles to extract")
+            return []
+
+        # Initialize parser and cleaner
+        parser = ArticleParser()
+        cleaner = TextCleaner()
 
         parsed_articles = []
-        for raw in raw_articles:
-            parsed_articles.append(
-                {
-                    "url": raw["url"],
-                    "title": f"{self.ticker} Reports Strong Earnings",
-                    "text": "This is mock article text about earnings results.",
-                    "author": "Unknown",
-                    "published": datetime.now().isoformat(),
-                    "word_count": 50,
-                }
-            )
+
+        for i, raw in enumerate(raw_articles, 1):
+            url = raw.get("url", "")
+            html = raw.get("html", "")
+
+            if not html:
+                logger.warning(f"No HTML content for {url}")
+                self.metrics.extraction_failed += 1
+                continue
+
+            logger.debug(f"Extracting {i}/{len(raw_articles)}: {url}")
+
+            # Parse HTML to extract article
+            article = parser.parse(html, url=url)
+
+            if not article:
+                logger.warning(f"Failed to extract article from {url}")
+                self.metrics.extraction_failed += 1
+                continue
+
+            # Clean text
+            article = cleaner.clean(article)
+
+            # Check length constraints
+            if article.get("too_short"):
+                self.metrics.articles_too_short += 1
+                logger.debug(f"Article too short: {url}")
+                continue
+
+            if article.get("too_long"):
+                self.metrics.articles_too_long += 1
+                logger.debug(f"Article too long (truncated): {url}")
+
+            # Save parsed article
+            try:
+                parsed_path = self.storage.save_parsed_article(self.ticker, article)
+                article["parsed_path"] = str(parsed_path)
+            except Exception as e:
+                logger.warning(f"Failed to save parsed article for {url}: {e}")
+
+            parsed_articles.append(article)
             self.metrics.extraction_success += 1
 
-        logger.info(f"Extracted {len(parsed_articles)} articles")
+        logger.info(
+            f"Extraction complete: {self.metrics.extraction_success}/{len(raw_articles)} successful "
+            f"({self.metrics.extraction_success_rate:.1f}%)"
+        )
+
         return parsed_articles
 
     def _run_analysis(self, parsed_articles: list) -> list:
@@ -262,23 +336,57 @@ class Pipeline:
         Returns:
             List of articles with sentiment scores
         """
+        from app.analysis.sentiment import get_sentiment_analyzer
+
         logger.info("Phase 4: Sentiment Analysis")
 
-        # TODO: Implement in Chunk 4
-        logger.warning("Sentiment analysis not yet implemented - using mock data")
+        if not parsed_articles:
+            logger.warning("No articles to analyze")
+            return []
+
+        # Initialize sentiment analyzer
+        try:
+            analyzer = get_sentiment_analyzer(
+                model=self.sentiment_model, use_gpu=self.settings.use_gpu
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize sentiment analyzer: {e}")
+            return parsed_articles
 
         analyzed_articles = []
-        for article in parsed_articles:
-            article["sentiment"] = {
-                "model": self.sentiment_model,
-                "label": "positive",
-                "score": 0.75,
-                "compound": 0.5,
-            }
-            analyzed_articles.append(article)
-            self.metrics.sentiment_analyzed += 1
 
-        logger.info(f"Analyzed {len(analyzed_articles)} articles")
+        for i, article in enumerate(parsed_articles, 1):
+            text = article.get("text", "")
+            if not text:
+                logger.warning(f"No text to analyze for article {i}")
+                self.metrics.sentiment_failed += 1
+                continue
+
+            logger.debug(f"Analyzing sentiment {i}/{len(parsed_articles)}")
+
+            try:
+                # Analyze sentiment
+                sentiment = analyzer.analyze(text)
+                article["sentiment"] = sentiment
+
+                analyzed_articles.append(article)
+                self.metrics.sentiment_analyzed += 1
+
+                logger.debug(
+                    f"Sentiment: {sentiment.get('label', 'N/A')} "
+                    f"(confidence: {sentiment.get('confidence', 0):.3f})"
+                )
+
+            except Exception as e:
+                logger.error(f"Failed to analyze article {i}: {e}")
+                self.metrics.sentiment_failed += 1
+                continue
+
+        logger.info(
+            f"Sentiment analysis complete: {self.metrics.sentiment_analyzed}/{len(parsed_articles)} successful "
+            f"({self.metrics.sentiment_success_rate:.1f}%)"
+        )
+
         return analyzed_articles
 
     def _run_reporting(self, analyzed_articles: list) -> Path:
@@ -291,11 +399,29 @@ class Pipeline:
         Returns:
             Path to generated report
         """
+        from app.analysis.aggregator import SentimentAggregator
+
         logger.info("Phase 5: Reporting")
 
-        # TODO: Implement in Chunk 5
-        logger.warning("Reporting not yet implemented - saving basic results")
+        # Aggregate sentiment scores
+        aggregator = SentimentAggregator()
 
+        # Use weighted aggregation based on relevance and quality
+        weights = []
+        for article in analyzed_articles:
+            # Combine relevance and quality scores
+            relevance = article.get("relevance_score", 0.5)
+            quality = article.get("quality_score", 0.5)
+            weight = (relevance * 0.6) + (quality * 0.4)
+            weights.append(weight)
+
+        # Get aggregated sentiment
+        if weights and len(weights) == len(analyzed_articles):
+            aggregated = aggregator.aggregate_weighted(analyzed_articles, weights)
+        else:
+            aggregated = aggregator.aggregate(analyzed_articles)
+
+        # Build results
         results = {
             "ticker": self.ticker,
             "timestamp": datetime.now().isoformat(),
@@ -303,19 +429,33 @@ class Pipeline:
                 "start": self.start_date.isoformat(),
                 "end": self.end_date.isoformat(),
             },
+            "sentiment_summary": aggregated,
             "articles": analyzed_articles,
-            "summary": {
-                "total_articles": len(analyzed_articles),
-                "average_sentiment": 0.75,
-                "positive_count": len(analyzed_articles),
-                "negative_count": 0,
-                "neutral_count": 0,
-            },
             "metrics": self.metrics.summary(),
+            "configuration": {
+                "sentiment_model": self.sentiment_model,
+                "top_k": self.top_k,
+            },
         }
 
         # Save to disk
         output_path = self.storage.save_results(self.ticker, results)
 
         logger.info(f"Results saved to {output_path}")
+
+        # Log summary
+        if "overall" in aggregated:
+            overall = aggregated["overall"]
+            logger.info(
+                f"Overall sentiment: {overall.get('label', 'N/A')} "
+                f"(confidence: {overall.get('confidence', 0):.3f})"
+            )
+        if "statistics" in aggregated:
+            stats = aggregated["statistics"]
+            logger.info(
+                f"Distribution: {stats.get('positive_count', 0)} positive, "
+                f"{stats.get('negative_count', 0)} negative, "
+                f"{stats.get('neutral_count', 0)} neutral"
+            )
+
         return output_path
