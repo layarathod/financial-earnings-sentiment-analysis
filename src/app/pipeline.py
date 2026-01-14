@@ -336,23 +336,57 @@ class Pipeline:
         Returns:
             List of articles with sentiment scores
         """
+        from app.analysis.sentiment import get_sentiment_analyzer
+
         logger.info("Phase 4: Sentiment Analysis")
 
-        # TODO: Implement in Chunk 4
-        logger.warning("Sentiment analysis not yet implemented - using mock data")
+        if not parsed_articles:
+            logger.warning("No articles to analyze")
+            return []
+
+        # Initialize sentiment analyzer
+        try:
+            analyzer = get_sentiment_analyzer(
+                model=self.sentiment_model, use_gpu=self.settings.use_gpu
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize sentiment analyzer: {e}")
+            return parsed_articles
 
         analyzed_articles = []
-        for article in parsed_articles:
-            article["sentiment"] = {
-                "model": self.sentiment_model,
-                "label": "positive",
-                "score": 0.75,
-                "compound": 0.5,
-            }
-            analyzed_articles.append(article)
-            self.metrics.sentiment_analyzed += 1
 
-        logger.info(f"Analyzed {len(analyzed_articles)} articles")
+        for i, article in enumerate(parsed_articles, 1):
+            text = article.get("text", "")
+            if not text:
+                logger.warning(f"No text to analyze for article {i}")
+                self.metrics.sentiment_failed += 1
+                continue
+
+            logger.debug(f"Analyzing sentiment {i}/{len(parsed_articles)}")
+
+            try:
+                # Analyze sentiment
+                sentiment = analyzer.analyze(text)
+                article["sentiment"] = sentiment
+
+                analyzed_articles.append(article)
+                self.metrics.sentiment_analyzed += 1
+
+                logger.debug(
+                    f"Sentiment: {sentiment.get('label', 'N/A')} "
+                    f"(confidence: {sentiment.get('confidence', 0):.3f})"
+                )
+
+            except Exception as e:
+                logger.error(f"Failed to analyze article {i}: {e}")
+                self.metrics.sentiment_failed += 1
+                continue
+
+        logger.info(
+            f"Sentiment analysis complete: {self.metrics.sentiment_analyzed}/{len(parsed_articles)} successful "
+            f"({self.metrics.sentiment_success_rate:.1f}%)"
+        )
+
         return analyzed_articles
 
     def _run_reporting(self, analyzed_articles: list) -> Path:
@@ -365,11 +399,29 @@ class Pipeline:
         Returns:
             Path to generated report
         """
+        from app.analysis.aggregator import SentimentAggregator
+
         logger.info("Phase 5: Reporting")
 
-        # TODO: Implement in Chunk 5
-        logger.warning("Reporting not yet implemented - saving basic results")
+        # Aggregate sentiment scores
+        aggregator = SentimentAggregator()
 
+        # Use weighted aggregation based on relevance and quality
+        weights = []
+        for article in analyzed_articles:
+            # Combine relevance and quality scores
+            relevance = article.get("relevance_score", 0.5)
+            quality = article.get("quality_score", 0.5)
+            weight = (relevance * 0.6) + (quality * 0.4)
+            weights.append(weight)
+
+        # Get aggregated sentiment
+        if weights and len(weights) == len(analyzed_articles):
+            aggregated = aggregator.aggregate_weighted(analyzed_articles, weights)
+        else:
+            aggregated = aggregator.aggregate(analyzed_articles)
+
+        # Build results
         results = {
             "ticker": self.ticker,
             "timestamp": datetime.now().isoformat(),
@@ -377,19 +429,33 @@ class Pipeline:
                 "start": self.start_date.isoformat(),
                 "end": self.end_date.isoformat(),
             },
+            "sentiment_summary": aggregated,
             "articles": analyzed_articles,
-            "summary": {
-                "total_articles": len(analyzed_articles),
-                "average_sentiment": 0.75,
-                "positive_count": len(analyzed_articles),
-                "negative_count": 0,
-                "neutral_count": 0,
-            },
             "metrics": self.metrics.summary(),
+            "configuration": {
+                "sentiment_model": self.sentiment_model,
+                "top_k": self.top_k,
+            },
         }
 
         # Save to disk
         output_path = self.storage.save_results(self.ticker, results)
 
         logger.info(f"Results saved to {output_path}")
+
+        # Log summary
+        if "overall" in aggregated:
+            overall = aggregated["overall"]
+            logger.info(
+                f"Overall sentiment: {overall.get('label', 'N/A')} "
+                f"(confidence: {overall.get('confidence', 0):.3f})"
+            )
+        if "statistics" in aggregated:
+            stats = aggregated["statistics"]
+            logger.info(
+                f"Distribution: {stats.get('positive_count', 0)} positive, "
+                f"{stats.get('negative_count', 0)} negative, "
+                f"{stats.get('neutral_count', 0)} neutral"
+            )
+
         return output_path
