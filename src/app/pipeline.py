@@ -205,19 +205,51 @@ class Pipeline:
         Returns:
             List of raw article data
         """
+        from app.fetcher.downloader import ArticleDownloader
+
         logger.info("Phase 2: Fetching")
 
-        # TODO: Implement in Chunk 3
-        logger.warning("Fetching not yet implemented - using mock data")
+        if not urls:
+            logger.warning("No URLs to fetch")
+            return []
+
+        # Initialize downloader
+        downloader = ArticleDownloader()
 
         raw_articles = []
-        for url_data in urls:
-            raw_articles.append(
-                {"url": url_data["url"], "html": "<html><body>Mock content</body></html>"}
-            )
-            self.metrics.fetch_success += 1
 
-        logger.info(f"Fetched {len(raw_articles)} articles")
+        for i, url_data in enumerate(urls, 1):
+            url = url_data.get("url", "")
+            if not url:
+                continue
+
+            logger.debug(f"Fetching {i}/{len(urls)}: {url}")
+
+            # Download article
+            result = downloader.download(url)
+
+            if result:
+                # Save raw HTML
+                try:
+                    html_path = self.storage.save_raw_html(self.ticker, url, result["html"])
+                    result["html_path"] = str(html_path)
+                except Exception as e:
+                    logger.warning(f"Failed to save raw HTML for {url}: {e}")
+
+                raw_articles.append(result)
+                self.metrics.fetch_success += 1
+            else:
+                self.metrics.fetch_failed += 1
+                logger.warning(f"Failed to fetch {url}")
+
+        # Close downloader
+        downloader.close()
+
+        logger.info(
+            f"Fetching complete: {self.metrics.fetch_success}/{len(urls)} successful "
+            f"({self.metrics.fetch_success_rate:.1f}%)"
+        )
+
         return raw_articles
 
     def _run_extraction(self, raw_articles: list) -> list:
@@ -230,26 +262,68 @@ class Pipeline:
         Returns:
             List of parsed article dictionaries
         """
+        from app.extraction.cleaner import TextCleaner
+        from app.extraction.parser import ArticleParser
+
         logger.info("Phase 3: Extraction")
 
-        # TODO: Implement in Chunk 3
-        logger.warning("Extraction not yet implemented - using mock data")
+        if not raw_articles:
+            logger.warning("No articles to extract")
+            return []
+
+        # Initialize parser and cleaner
+        parser = ArticleParser()
+        cleaner = TextCleaner()
 
         parsed_articles = []
-        for raw in raw_articles:
-            parsed_articles.append(
-                {
-                    "url": raw["url"],
-                    "title": f"{self.ticker} Reports Strong Earnings",
-                    "text": "This is mock article text about earnings results.",
-                    "author": "Unknown",
-                    "published": datetime.now().isoformat(),
-                    "word_count": 50,
-                }
-            )
+
+        for i, raw in enumerate(raw_articles, 1):
+            url = raw.get("url", "")
+            html = raw.get("html", "")
+
+            if not html:
+                logger.warning(f"No HTML content for {url}")
+                self.metrics.extraction_failed += 1
+                continue
+
+            logger.debug(f"Extracting {i}/{len(raw_articles)}: {url}")
+
+            # Parse HTML to extract article
+            article = parser.parse(html, url=url)
+
+            if not article:
+                logger.warning(f"Failed to extract article from {url}")
+                self.metrics.extraction_failed += 1
+                continue
+
+            # Clean text
+            article = cleaner.clean(article)
+
+            # Check length constraints
+            if article.get("too_short"):
+                self.metrics.articles_too_short += 1
+                logger.debug(f"Article too short: {url}")
+                continue
+
+            if article.get("too_long"):
+                self.metrics.articles_too_long += 1
+                logger.debug(f"Article too long (truncated): {url}")
+
+            # Save parsed article
+            try:
+                parsed_path = self.storage.save_parsed_article(self.ticker, article)
+                article["parsed_path"] = str(parsed_path)
+            except Exception as e:
+                logger.warning(f"Failed to save parsed article for {url}: {e}")
+
+            parsed_articles.append(article)
             self.metrics.extraction_success += 1
 
-        logger.info(f"Extracted {len(parsed_articles)} articles")
+        logger.info(
+            f"Extraction complete: {self.metrics.extraction_success}/{len(raw_articles)} successful "
+            f"({self.metrics.extraction_success_rate:.1f}%)"
+        )
+
         return parsed_articles
 
     def _run_analysis(self, parsed_articles: list) -> list:
