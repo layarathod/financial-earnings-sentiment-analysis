@@ -135,28 +135,65 @@ class Pipeline:
         Returns:
             List of URL dictionaries with metadata
         """
+        from app.discovery.deduplicator import URLDeduplicator
+        from app.discovery.filters import ArticleFilter
+        from app.discovery.search import ArticleDiscovery
+
         logger.info("Phase 1: Discovery")
 
-        # TODO: Implement in Chunk 2
-        # For now, return mock data
-        logger.warning("Discovery not yet implemented - using mock data")
+        # Initialize discovery components
+        discovery = ArticleDiscovery(
+            ticker=self.ticker,
+            start_date=self.start_date,
+            end_date=self.end_date,
+            top_k=self.top_k,
+        )
 
-        mock_urls = [
-            {
-                "url": f"https://example.com/article-{i}",
-                "title": f"Mock {self.ticker} Earnings Article {i}",
-                "source": "example.com",
-                "published": datetime.now().isoformat(),
-                "relevance_score": 0.9 - (i * 0.05),
-            }
-            for i in range(min(5, self.top_k))
-        ]
+        # Get company name for filtering
+        company_name = discovery.company_name
 
-        self.metrics.urls_discovered = len(mock_urls)
-        self.metrics.urls_to_fetch = len(mock_urls)
+        # Discover articles from RSS feeds
+        raw_articles = discovery.discover()
+        self.metrics.urls_discovered = len(raw_articles)
 
-        logger.info(f"Discovered {len(mock_urls)} articles")
-        return mock_urls
+        if not raw_articles:
+            logger.warning(f"No articles discovered for {self.ticker}")
+            self.metrics.urls_to_fetch = 0
+            return []
+
+        # Filter by date, domain, etc.
+        article_filter = ArticleFilter(
+            ticker=self.ticker,
+            company_name=company_name,
+            start_date=self.start_date,
+            end_date=self.end_date,
+            exclude_domains=self.settings.exclude_domains,
+        )
+
+        filtered_articles = article_filter.filter_and_rank(raw_articles, top_k=self.top_k * 2)
+        self.metrics.urls_filtered = len(raw_articles) - len(filtered_articles)
+
+        # Deduplicate URLs
+        deduplicator = URLDeduplicator()
+        unique_articles = deduplicator.deduplicate(filtered_articles)
+        self.metrics.urls_deduplicated = len(filtered_articles) - len(unique_articles)
+
+        # Limit to top K
+        final_articles = unique_articles[: self.top_k]
+        self.metrics.urls_to_fetch = len(final_articles)
+
+        logger.info(f"Discovery complete: {len(final_articles)} articles ready to fetch")
+        logger.info(
+            f"Stats: discovered={self.metrics.urls_discovered}, "
+            f"filtered={self.metrics.urls_filtered}, "
+            f"deduplicated={self.metrics.urls_deduplicated}"
+        )
+
+        # Save discovered URLs
+        if final_articles:
+            self.storage.save_urls(self.ticker, final_articles)
+
+        return final_articles
 
     def _run_fetching(self, urls: list) -> list:
         """
