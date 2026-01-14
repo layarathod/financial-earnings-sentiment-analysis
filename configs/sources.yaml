@@ -1,0 +1,154 @@
+# Curated news sources for financial earnings articles
+# Format: domain, RSS feed URLs, quality tier (1=highest)
+
+sources:
+  # Tier 1: Premium financial news (high credibility)
+  tier1:
+    - name: "Reuters Business"
+      domain: "reuters.com"
+      rss_feeds:
+        - "https://www.reuters.com/business"
+        - "https://www.reuters.com/markets"
+      keywords: ["earnings", "results", "quarterly", "revenue", "profit"]
+      quality_score: 1.0
+
+    - name: "Bloomberg"
+      domain: "bloomberg.com"
+      rss_feeds:
+        - "https://www.bloomberg.com/feeds/markets.rss"
+      keywords: ["earnings", "results", "quarterly"]
+      quality_score: 1.0
+
+    - name: "Wall Street Journal"
+      domain: "wsj.com"
+      rss_feeds:
+        - "https://feeds.a.dj.com/rss/RSSMarketsMain.xml"
+      keywords: ["earnings", "quarterly", "results"]
+      quality_score: 1.0
+
+    - name: "Financial Times"
+      domain: "ft.com"
+      rss_feeds: []  # Often requires subscription
+      keywords: ["earnings", "results"]
+      quality_score: 1.0
+
+  # Tier 2: Major business news outlets
+  tier2:
+    - name: "CNBC"
+      domain: "cnbc.com"
+      rss_feeds:
+        - "https://www.cnbc.com/id/100003114/device/rss/rss.html"  # Top news
+        - "https://www.cnbc.com/id/15839135/device/rss/rss.html"  # Earnings
+      keywords: ["earnings", "results", "quarterly", "beat", "miss"]
+      quality_score: 0.9
+
+    - name: "MarketWatch"
+      domain: "marketwatch.com"
+      rss_feeds:
+        - "http://feeds.marketwatch.com/marketwatch/topstories"
+      keywords: ["earnings", "results", "quarterly"]
+      quality_score: 0.9
+
+    - name: "Yahoo Finance"
+      domain: "finance.yahoo.com"
+      rss_feeds:
+        - "https://finance.yahoo.com/news/rssindex"
+      keywords: ["earnings", "results", "quarterly"]
+      quality_score: 0.85
+
+    - name: "Barron's"
+      domain: "barrons.com"
+      rss_feeds:
+        - "https://www.barrons.com/feed"
+      keywords: ["earnings", "results", "outlook"]
+      quality_score: 0.9
+
+  # Tier 3: Financial analysis & commentary
+  tier3:
+    - name: "Seeking Alpha"
+      domain: "seekingalpha.com"
+      rss_feeds:
+        - "https://seekingalpha.com/feed.xml"
+      keywords: ["earnings", "results", "analysis"]
+      quality_score: 0.75
+
+    - name: "The Motley Fool"
+      domain: "fool.com"
+      rss_feeds:
+        - "https://www.fool.com/feeds/index.aspx"
+      keywords: ["earnings", "results"]
+      quality_score: 0.7
+
+    - name: "Investor's Business Daily"
+      domain: "investors.com"
+      rss_feeds: []
+      keywords: ["earnings", "results"]
+      quality_score: 0.8
+
+  # Tier 4: Company-specific sources (SEC filings, IR pages)
+  tier4:
+    - name: "SEC Edgar"
+      domain: "sec.gov"
+      rss_feeds: []  # Will construct company-specific URLs
+      keywords: ["8-K", "10-Q", "10-K", "earnings"]
+      quality_score: 1.0  # Primary source
+
+# Search terms for different contexts
+search_templates:
+  earnings_release:
+    - "{ticker} earnings results"
+    - "{ticker} quarterly results"
+    - "{ticker} reports earnings"
+    - "{company} earnings"
+
+  earnings_call:
+    - "{ticker} earnings call"
+    - "{ticker} conference call"
+
+  guidance:
+    - "{ticker} guidance"
+    - "{ticker} outlook"
+    - "{ticker} forecast"
+
+# Date patterns to look for in articles
+date_patterns:
+  - "Q[1-4] 20[0-9]{2}"  # Q1 2024
+  - "first quarter"
+  - "second quarter"
+  - "third quarter"
+  - "fourth quarter"
+  - "fiscal year"
+
+# Aspect keywords for aspect-based sentiment (stretch goal)
+aspect_keywords:
+  revenue:
+    - "revenue"
+    - "sales"
+    - "top line"
+    - "topline"
+
+  earnings:
+    - "earnings"
+    - "EPS"
+    - "earnings per share"
+    - "profit"
+    - "net income"
+
+  guidance:
+    - "guidance"
+    - "outlook"
+    - "forecast"
+    - "expects"
+    - "projected"
+
+  margins:
+    - "margin"
+    - "operating margin"
+    - "gross margin"
+    - "profit margin"
+
+  growth:
+    - "growth"
+    - "year-over-year"
+    - "YoY"
+    - "QoQ"
