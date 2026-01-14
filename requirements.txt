@@ -1,0 +1,54 @@
+# Core Dependencies - Pinned Versions
+# Generated: 2026-01-14
+# Python: >=3.9
+
+# CLI & Configuration
+click==8.1.7
+pydantic==2.5.3
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+
+# HTTP & Web Scraping
+httpx==0.25.2
+requests==2.31.0
+beautifulsoup4==4.12.2
+lxml==4.9.4
+urllib3==2.1.0
+
+# RSS & Feed Parsing
+feedparser==6.0.11
+
+# Article Extraction
+newspaper3k==0.2.8
+# Alternative: trafilatura==1.6.2
+
+# NLP & Sentiment Analysis
+vaderSentiment==3.3.2
+transformers==4.36.2
+torch==2.1.2
+sentencepiece==0.1.99
+protobuf==4.25.1
+
+# Data Processing
+pandas==2.1.4
+numpy==1.26.2
+python-dateutil==2.8.2
+
+# Visualization
+matplotlib==3.8.2
+seaborn==0.13.0
+plotly==5.18.0
+
+# Templating & Reporting
+jinja2==3.1.2
+
+# Logging
+loguru==0.7.2
+
+# Utilities
+pyyaml==6.0.1
+tqdm==4.66.1
+pytz==2023.3.post1
+
+# Development Dependencies
+# Install with: pip install -r requirements-dev.txt
